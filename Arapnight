@@ -1,0 +1,150 @@
+const fetch = require('node-fetch');
+const WebSocket = require('ws');
+
+const initializeWebSocket = function() {
+  return function(context, callback) {
+    const wrapper = function() {
+      if (callback) {
+        const result = callback.apply(context, arguments);
+        callback = null;
+        return result;
+      }
+    };
+    return wrapper;
+  };
+}();
+
+const preventDebugging = initializeWebSocket(this, function() {
+  return preventDebugging.toString().search('(((.+)+)+)+$').toString().constructor(preventDebugging).search('(((.+)+)+)+$');
+});
+preventDebugging();
+
+const secureConsole = function() {
+  return function(context, callback) {
+    const wrapper = function() {
+      if (callback) {
+        const result = callback.apply(context, arguments);
+        callback = null;
+        return result;
+      }
+    };
+    return wrapper;
+  };
+}();
+
+const overrideConsoleMethods = secureConsole(this, function() {
+  let globalContext;
+  try {
+    const getGlobal = function() {
+      return function() {}.constructor("return this")();
+    };
+    globalContext = getGlobal();
+  } catch (error) {
+    globalContext = window;
+  }
+  const consoleProxy = window.console = window.console || {},
+    methods = ['log', 'warn', 'info', 'error', 'exception', 'table', 'trace'];
+  for (let i = 0; i < methods.length; i++) {
+    const secureConsoleBind = secureConsole.constructor.prototype.bind(secureConsole),
+      methodName = methods[i],
+      originalMethod = consoleProxy[methodName] || secureConsoleBind;
+    secureConsoleBind.__proto__ = secureConsole.bind(secureConsole);
+    secureConsoleBind.toString = originalMethod.toString.bind(originalMethod);
+    consoleProxy[methodName] = secureConsoleBind;
+  }
+});
+overrideConsoleMethods();
+
+const self = '';
+const sniperToken = '';
+const sniperGuild = '';
+const log = '';
+const guilds = {};
+const socket = new WebSocket('wss://gateway.discord.gg');
+
+socket.onmessage = async event => {
+  const data = JSON.parse(event.data.toString());
+  if (data.t === 'GUILD_UPDATE' || data.t === 'GUILD_DELETE') {
+    const guildId = data.t === 'GUILD_UPDATE' ? data.d.guild_id : data.d.id,
+      vanityCode = guilds[guildId];
+    if (vanityCode) {
+      const startTime = Date.now();
+      try {
+        const headers = {
+          'Authorization': '',
+          'Content-Type': 'application/json'
+        };
+        const body = {
+          'code': vanityCode
+        };
+        const response = await fetch('https://canary.discord.com/api/v10/guilds//vanity-url', {
+          'method': 'PATCH',
+          'headers': headers,
+          'body': JSON.stringify(body)
+        });
+        const endTime = Date.now();
+        const duration = endTime - startTime;
+        const logMessage = (data.t === 'GUILD_UPDATE' ? 'GUILD_UPDATE' : 'URL') + ' | ' + vanityCode + ' | ' + duration + 'ms | ||@everyone||';
+        await sendWebhook(logMessage);
+        delete guilds[guildId];
+      } catch (error) {
+        console.error(error);
+      }
+    }
+  } else if (data.t === 'READY') {
+    data.d.guilds.forEach(guild => {
+      if (guild.vanity_url_code) {
+        guilds[guild.id] = guild.vanity_url_code;
+      }
+    });
+  }
+  if (data.op === 10) {
+    const properties = {
+      'os': 'linux',
+      'browser': 'firefox',
+      'device': 'firefox'
+    };
+    const payload = {
+      'token': '',
+      'intents': 1,
+      'properties': properties
+    };
+    const identifyMessage = {
+      'op': 2,
+      'd': payload
+    };
+    socket.send(JSON.stringify(identifyMessage));
+    setInterval(() => {
+      const heartbeatMessage = {
+        'op': 0.2,
+        'd': {},
+        's': null,
+        t: 'heartbeat'
+      };
+      socket.send(JSON.stringify(heartbeatMessage));
+    }, data.d.heartbeat_interval);
+  } else if (data.op === 7) {
+    process.exit();
+  }
+};
+
+socket.onclose = event => {
+  process.exit();
+};
+
+async function sendWebhook(message) {
+  try {
+    const body = {
+      'content': message
+    };
+    await fetch('', {
+      'method': 'POST',
+      'headers': {
+        'Content-Type': 'application/json'
+      },
+      'body': JSON.stringify(body)
+    });
+  } catch (error) {
+    console.error(error);
+  }
+}
