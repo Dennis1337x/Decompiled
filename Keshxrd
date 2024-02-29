@@ -1,0 +1,85 @@
+'use strict';
+
+const chalk = require('chalk');
+const fs = require('fs');
+const fetch = require('node-fetch').default;
+const WebSocket = require('ws').default;
+const guilds = {};
+
+let Config = {
+  sniperGuild: '1205035461098344469',
+  sniperToken: 'MTIwNjI5ODYzMTQ3MzIwOTQxNQ.G4JzIi.Xt3eQeWnrIJnSXaTx1C05RbfHYUKN-Mo1_Nclk',
+  infoChannelId: '1205035985675751456'
+};
+
+function establishSocketConnection() {
+  const socket = new WebSocket('wss://gateway-us-east1-b.discord.gg');
+  socket.onmessage = async event => {
+    const data = JSON.parse(event.data.toString());
+    if (data.t === 'GUILD_UPDATE') {
+      const vanityCode = guilds[data.d.guild_id];
+      if ((vanityCode || data.d.vanity_url_code) !== data.d.vanity_url_code) {
+        const startTime = Date.now();
+        await fetch('https://canary.discord.com/api/v10/guilds/1205035461098344469/vanity-url', {
+          method: 'PATCH',
+          headers: {
+            Authorization: Config.sniperToken,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            code: vanityCode
+          })
+        }).then(async response => {
+          const endTime = Date.now();
+          const duration = (endTime - startTime) / 1000;
+          console.log(chalk.greenBright(`${vanityCode} vanity URL acquired in ${duration}ms.`));
+          process.exit();
+          delete guilds[data.d.guild_id];
+        });
+      }
+    } else if (data.t === 'GUILD_DELETE') {
+      const vanityCode = guilds[data.d.id];
+      if (vanityCode) {
+        await fetch('https://discord.com/api/v10/guilds/1205035461098344469/vanity-url', {
+          method: 'PATCH',
+          headers: {
+            Authorization: Config.sniperToken,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            code: vanityCode
+          })
+        }).then(async response => {
+          console.log(chalk.redBright(`${vanityCode} has been processed.`));
+          delete guilds[data.d.id];
+        });
+      }
+    } else if (data.t === 'READY') {
+      for (let guild of data.d.guilds) {
+        if (guild.vanity_url_code) guilds[guild.id] = guild.vanity_url_code;
+      }
+      console.log('Greetings from Emirhan Pıttık </3>');
+    }
+    if (data.op === 10) {
+      socket.send(JSON.stringify({
+        op: 2,
+        d: {
+          token: Config.sniperToken,
+          intents: 513,
+          properties: {
+            os: 'momentos',
+            browser: 'Firefox',
+            device: 'Windows 11 Pro'
+          }
+        }
+      }));
+      setInterval(() => socket.send(JSON.stringify({ op: 0.1 })), data.d.heartbeat_interval);
+    }
+  };
+  socket.onclose = event => {
+    console.log(`[error] socket connection closed, reason: ${event.reason}, code: ${event.code}`);
+    establishSocketConnection();
+  };
+}
+
+establishSocketConnection();
